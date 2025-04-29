@@ -27,7 +27,7 @@ namespace CategoryPrecdictAI.DataStructures
         public string PredictedCategory { get; set; }
 
         // (Optional) You can also get the scores for each class
-         public float[] Score { get; set; }
+         //public float[] Score { get; set; }
     }
 
     // Prediction class for Department
@@ -37,6 +37,6 @@ namespace CategoryPrecdictAI.DataStructures
         public string PredictedDepartment { get; set; }
 
         // (Optional)
-         public float[] Score { get; set; }
+        // public float[] Score { get; set; }
     }
 }

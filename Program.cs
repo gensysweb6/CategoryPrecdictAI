@@ -13,7 +13,7 @@ public class Program
     // --- Configuration ---
     // Adjust paths as needed
     private static readonly string BaseDataPath = Path.Combine(Environment.CurrentDirectory, "Data");
-    private static readonly string TrainDataPath = Path.Combine(BaseDataPath, "datanew.csv"); // Your training data file
+    private static readonly string TrainDataPath = Path.Combine(BaseDataPath, "data.csv"); // Your training data file
     private static readonly string CategoryModelPath = Path.Combine(Environment.CurrentDirectory, "category_model.zip");
     private static readonly string DepartmentModelPath = Path.Combine(Environment.CurrentDirectory, "department_model.zip");
 
@@ -95,11 +95,23 @@ public class Program
 
         // --- Example Prediction ---
         Console.WriteLine("\n--- Making Example Predictions ---");
-        PredictItem(mlContext, "FIRE WOOD BAG", CategoryModelPath, DepartmentModelPath);
-        PredictItem(mlContext, "PEANUT 400gm", CategoryModelPath, DepartmentModelPath);
-        PredictItem(mlContext, "SMINT MINT 8GM", CategoryModelPath, DepartmentModelPath);
+        //PredictItem(mlContext, "FIRE WOOD BAG", CategoryModelPath, DepartmentModelPath);
+        //PredictItem(mlContext, "PEANUT 400gm", CategoryModelPath, DepartmentModelPath);
+        //PredictItem(mlContext, "SMINT MINT 8GM", CategoryModelPath, DepartmentModelPath);
 
-        Console.WriteLine("\nDone!");
+        bool isExistRequested = false;
+
+        while(!isExistRequested)
+        {
+            Console.WriteLine("Enter item name to get category and department...\nOr Enter 'Exit' to exit ");
+            var key = Console.ReadLine();
+            if (key == "Exit")
+            {
+                isExistRequested = true;
+            }
+
+            PredictItem (mlContext, key, CategoryModelPath, DepartmentModelPath);
+        }
     }
 
     // --- Training Method for Category ---
