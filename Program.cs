@@ -1,32 +1,32 @@
 using CategoryPrecdictAI.DataStructures;
 using Microsoft.ML;
 using Microsoft.ML.Data;
+using Microsoft.ML.Transforms;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq; // Required for LINQ operations if used
+using System.Runtime.CompilerServices;
 
 // Assume ItemData, CategoryPrediction, DepartmentPrediction classes are defined as above
 
-public class Program
-{
+public class Program {
     // --- Configuration ---
     // Adjust paths as needed
     private static readonly string BaseDataPath = Path.Combine(Environment.CurrentDirectory, "Data");
     private static readonly string TrainDataPath = Path.Combine(BaseDataPath, "data.csv"); // Your training data file
     private static readonly string CategoryModelPath = Path.Combine(Environment.CurrentDirectory, "category_model.zip");
     private static readonly string DepartmentModelPath = Path.Combine(Environment.CurrentDirectory, "department_model.zip");
-
-    private static readonly bool isTraining = true; // Set to false if you want to skip training and just load the model
-    public static void Main(string[] args)
-    {
+    
+    private static readonly bool isTraining = false; // Set to false if you want to skip training and just load the model
+    public static void Main(string[] args) {
         // --- Configure Logging ---
         // Create a logger factory that sends logs to the console
-        using var loggerFactory = LoggerFactory.Create(builder =>
-        {
+        using var loggerFactory = LoggerFactory.Create(builder => {
             builder
                 .AddFilter("Microsoft.ML", LogLevel.Information) // Show Information level logs from ML.NET components
-                                                                 // You can adjust the LogLevel:
+                                                                // You can adjust the LogLevel:
                                                                  // LogLevel.Trace -> Very detailed (might include per-instance details)
                                                                  // LogLevel.Debug -> Detailed debug info
                                                                  // LogLevel.Information -> Standard progress (like trainer iterations) - GOOD STARTING POINT
@@ -37,13 +37,13 @@ public class Program
                 .AddConsole(); // Add the console logger provider
         });
 
+
         // Initialize MLContext
         var mlContext = new MLContext(seed: 0); // Seed for reproducibility
 
-        
 
-        if (isTraining)
-        {
+
+        if (isTraining) {
             Console.WriteLine("Loading data...");
             // Load data from CSV. Adjust separatorChar and hasHeader if needed.
             IDataView dataView = mlContext.Data.LoadFromTextFile<ItemData>(
@@ -91,32 +91,30 @@ public class Program
             mlContext.Model.Save(departmentModel, trainingData.Schema, DepartmentModelPath);
             Console.WriteLine($"Department Model saved to: {DepartmentModelPath}");
         }
-       
+
 
         // --- Example Prediction ---
         Console.WriteLine("\n--- Making Example Predictions ---");
-        //PredictItem(mlContext, "FIRE WOOD BAG", CategoryModelPath, DepartmentModelPath);
-        //PredictItem(mlContext, "PEANUT 400gm", CategoryModelPath, DepartmentModelPath);
-        //PredictItem(mlContext, "SMINT MINT 8GM", CategoryModelPath, DepartmentModelPath);
-
         bool isExistRequested = false;
 
-        while(!isExistRequested)
-        {
+        while (!isExistRequested) {
             Console.WriteLine("Enter item name to get category and department...\nOr Enter 'Exit' to exit ");
             var key = Console.ReadLine();
-            if (key == "Exit")
-            {
+            if (key == "Exit") {
                 isExistRequested = true;
+                return;
             }
 
-            PredictItem (mlContext, key, CategoryModelPath, DepartmentModelPath);
+            List<CategoryProbability> topCategoryPredictions = PredictCategory(mlContext, key, CategoryModelPath);
+            List<DepartmentProbability> topDepartmentPredictions = PredictDepartment(mlContext, key, DepartmentModelPath);
+
+            PrintPredictions(key, topCategoryPredictions, topDepartmentPredictions);
         }
     }
 
+
     // --- Training Method for Category ---
-    private static ITransformer TrainCategoryModel(MLContext mlContext, IDataView trainingData)
-    {
+    private static ITransformer TrainCategoryModel(MLContext mlContext, IDataView trainingData) {
         Console.WriteLine("Defining Category pipeline..."); // Manual message
         // Define the training pipeline
         var pipeline = mlContext.Transforms.Conversion.MapValueToKey(inputColumnName: nameof(ItemData.Category), outputColumnName: "Label") // Keep Label as the key column name
@@ -131,8 +129,7 @@ public class Program
     }
 
     // --- Training Method for Department ---
-    private static ITransformer TrainDepartmentModel(MLContext mlContext, IDataView trainingData)
-    {
+    private static ITransformer TrainDepartmentModel(MLContext mlContext, IDataView trainingData) {
         Console.WriteLine("Defining Department pipeline..."); // Manual message
         // Define the training pipeline (similar to category, but maps Department)
         var pipeline = mlContext.Transforms.Conversion.MapValueToKey(inputColumnName: nameof(ItemData.Department), outputColumnName: "Label") // Keep Label as the key column name
@@ -147,8 +144,7 @@ public class Program
     }
 
     // --- Evaluation Method (Generic) ---
-    private static void EvaluateModel(MLContext mlContext, ITransformer model, IDataView testData, string labelColumnName)
-    {
+    private static void EvaluateModel(MLContext mlContext, ITransformer model, IDataView testData, string labelColumnName) {
         Console.WriteLine($"Evaluating model for {labelColumnName}...");
         var predictions = model.Transform(testData);
 
@@ -165,28 +161,81 @@ public class Program
         // Console.WriteLine(metrics.ConfusionMatrix.GetFormattedConfusionTable());
     }
 
-    // --- Prediction Method ---
-    private static void PredictItem(MLContext mlContext, string itemName, string categoryModelPath, string departmentModelPath)
-    {
-        // Load the models
+    private static List<CategoryProbability> PredictCategory(MLContext mlContext, string itemName, string categoryModelPath) {
         ITransformer loadedCategoryModel = mlContext.Model.Load(categoryModelPath, out var categoryModelSchema);
-        ITransformer loadedDepartmentModel = mlContext.Model.Load(departmentModelPath, out var departmentModelSchema);
-
-        // Create prediction engines
-        // IMPORTANT: Input is ItemData, Output is the specific Prediction class
-        var categoryPredEngine = mlContext.Model.CreatePredictionEngine<ItemData, CategoryPrediction>(loadedCategoryModel);
-        var departmentPredEngine = mlContext.Model.CreatePredictionEngine<ItemData, DepartmentPrediction>(loadedDepartmentModel);
-
-        // Create input data
+        var predictionEngine = mlContext.Model.CreatePredictionEngine<ItemData, CategoryPrediction>(loadedCategoryModel);
         var inputData = new ItemData { ItemName = itemName };
 
-        // Make predictions
-        var categoryPrediction = categoryPredEngine.Predict(inputData);
-        var departmentPrediction = departmentPredEngine.Predict(inputData);
+        var prediction = predictionEngine.Predict(inputData);
+        var predictionWithScores = new List<CategoryProbability>();
 
-        Console.WriteLine($"--- Prediction for: '{itemName}' ---");
-        Console.WriteLine($"   Predicted Category:   {categoryPrediction.PredictedCategory} , score : {categoryPrediction.Score.ToString()}");
-        Console.WriteLine($"   Predicted Department: {departmentPrediction.PredictedDepartment} , score : {departmentPrediction.Score.ToString()}");
-        Console.WriteLine($"--------------------------------------");
+        if (predictionEngine is object && loadedCategoryModel is object) {
+            var inputDataList = new List<ItemData> { inputData };
+            IDataView inputDataView = mlContext.Data.LoadFromEnumerable(inputDataList);
+            IDataView transformedDataView = loadedCategoryModel.Transform(inputDataView);
+
+            VBuffer<ReadOnlyMemory<char>> slots = default;
+            transformedDataView.Schema["Score"].GetSlotNames(ref slots);
+            var slotNames = slots.DenseValues().ToArray();
+
+            var column = transformedDataView.GetColumn<float[]>(transformedDataView.Schema["Score"]).ToArray();
+            foreach (var item in column) {
+                for (int i = 0; i < item.Length; i++) {
+                    predictionWithScores.Add(new CategoryProbability {
+                        Category = slotNames[i].ToString(),
+                        Probability = item[i]
+                    });
+                }
+            }
+        }
+        return predictionWithScores.OrderByDescending(p => p.Probability).Take(3).ToList();
     }
+    private static List<DepartmentProbability> PredictDepartment(MLContext mlContext, string itemName, string departmentModelPath) {
+        ITransformer loadedDepartmentModel = mlContext.Model.Load(departmentModelPath, out var departmentModelSchema);
+        var predictionEngine = mlContext.Model.CreatePredictionEngine<ItemData, DepartmentPrediction>(loadedDepartmentModel);
+        var inputData = new ItemData { ItemName = itemName };
+
+        var prediction = predictionEngine.Predict(inputData);
+        var predictionWithScores = new List<DepartmentProbability>();
+
+        if (predictionEngine is object && loadedDepartmentModel is object) {
+            var inputDataList = new List<ItemData> { inputData };
+            IDataView inputDataView = mlContext.Data.LoadFromEnumerable(inputDataList);
+            IDataView transformedDataView = loadedDepartmentModel.Transform(inputDataView);
+
+            VBuffer<ReadOnlyMemory<char>> slots = default;
+            transformedDataView.Schema["Score"].GetSlotNames(ref slots);
+            var slotNames = slots.DenseValues().ToArray();
+
+            var column = transformedDataView.GetColumn<float[]>(transformedDataView.Schema["Score"]).ToArray();
+            foreach (var item in column) {
+                for (int i = 0; i < item.Length; i++) {
+                    predictionWithScores.Add(new DepartmentProbability {
+                        Department = slotNames[i].ToString(),
+                        Probability = item[i]
+                    });
+                }
+            }
+        }
+        return predictionWithScores.OrderByDescending(p => p.Probability).Take(3).ToList();
+    }
+
+
+    // --- Printing Prediction Results ---
+    private static void PrintPredictions(string itemName, List<CategoryProbability> categoryPredictions, List<DepartmentProbability> departmentPredictions) {
+        Console.WriteLine($"--- Top Predictions for: '{itemName}' ---");
+
+        Console.WriteLine("\nTop Category Predictions:");
+        foreach (var prediction in categoryPredictions) {
+            Console.WriteLine($"   - Category: {prediction.Category}, Probability: {prediction.Probability:P2}");
+        }
+
+        Console.WriteLine("\nTop Department Predictions:");
+        foreach (var prediction in departmentPredictions) {
+            Console.WriteLine($"   - Department: {prediction.Department}, Probability: {prediction.Probability:P2}");
+        }
+
+        Console.WriteLine("--------------------------------------");
+    }
+
 }
